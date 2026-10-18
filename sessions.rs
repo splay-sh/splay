@@ -156,7 +156,7 @@ impl SessionStore {
             SESSION_STATUS_RUNNING | SESSION_STATUS_STARTING
         ) {
             if let Some(pid) = session.pid {
-                terminate_process(pid)?;
+                hang_up_session(pid)?;
             }
 
             session.status = SESSION_STATUS_STOPPED.to_string();
@@ -852,6 +852,22 @@ fn print_file(path: &Path) -> Result<(), SplayError> {
     let mut stdout = io::stdout();
     io::copy(&mut file, &mut stdout)?;
     stdout.flush()?;
+    Ok(())
+}
+
+/// Hangs up a session the way closing its terminal would. Interactive shells
+/// ignore `SIGTERM` but exit on `SIGHUP`, and pass it on to their jobs. The
+/// session's command leads its own process group, so the whole foreground
+/// job gets the signal, and `SIGCONT` wakes it if it was stopped.
+fn hang_up_session(pid: u32) -> Result<(), SplayError> {
+    let group = -(pid as i32);
+    for signal in [libc::SIGHUP, libc::SIGCONT] {
+        let rc = unsafe { libc::kill(group, signal) };
+        if rc != 0 && io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH) {
+            return Err(io::Error::last_os_error().into());
+        }
+    }
+
     Ok(())
 }
 
