@@ -4,7 +4,7 @@
 
 use gtk::{
     Align, Box as GtkBox, Button, Image, Label, MenuButton, Orientation, PackType, Popover,
-    PositionType, ToggleButton, WindowControls, WindowHandle, prelude::*,
+    PositionType, Separator, ToggleButton, WindowControls, WindowHandle, prelude::*,
 };
 use std::rc::Rc;
 
@@ -14,6 +14,7 @@ use crate::{
         schedule_render_current_ui, workspace_ref,
     },
     data::{WorkspaceEntry, WorkspaceGroup},
+    repo_dialog::open_add_repository_dialog,
     workspace_panel::DetailWidgets,
 };
 
@@ -111,6 +112,26 @@ pub(crate) fn render_repo_switcher(
         });
         widgets.repo_list.append(&item);
     }
+
+    if !groups.is_empty() {
+        let separator = Separator::new(Orientation::Horizontal);
+        separator.add_css_class("repo-switcher-separator");
+        widgets.repo_list.append(&separator);
+    }
+    let title = Label::new(Some("Add repository…"));
+    title.set_halign(Align::Start);
+    let item = Button::new();
+    item.set_child(Some(&title));
+    item.add_css_class("repo-switcher-item");
+    let state = state.clone();
+    let popover = widgets.repo_popover.downgrade();
+    item.connect_clicked(move |_| {
+        if let Some(popover) = popover.upgrade() {
+            popover.popdown();
+        }
+        open_add_repository_dialog(&state);
+    });
+    widgets.repo_list.append(&item);
 }
 
 /// The repository whose workspaces the sidebar lists: that of the selected
