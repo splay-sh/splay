@@ -18,7 +18,6 @@ pub struct WorkspaceGroup {
     pub repo_label: String,
     pub repo_canonical: String,
     pub repo_status: Option<String>,
-    pub collapsed: bool,
     pub recently_used: bool,
     pub workspace_count: usize,
     pub workspaces: Vec<WorkspaceEntry>,
@@ -153,7 +152,6 @@ pub async fn load_workspace_groups() -> Result<Vec<WorkspaceGroup>, SplayError> 
             repo_label,
             repo_canonical,
             repo_status,
-            collapsed: repo.collapsed,
             recently_used,
             workspace_count,
             workspaces: workspace_entries,
@@ -338,24 +336,6 @@ pub async fn archive_repository(repository: String) -> Result<(), SplayError> {
     let repo_store = RepositoryStore::open().await?;
     repo_store.archive(&repository).await?;
     Ok(())
-}
-
-pub async fn set_repository_collapsed(
-    repository: String,
-    collapsed: bool,
-) -> Result<(), SplayError> {
-    let repo_store = RepositoryStore::open().await?;
-    if collapsed {
-        repo_store.collapse(&repository).await?;
-    } else {
-        repo_store.expand(&repository).await?;
-    }
-    Ok(())
-}
-
-pub async fn set_all_repositories_collapsed(collapsed: bool) -> Result<(), SplayError> {
-    let repo_store = RepositoryStore::open().await?;
-    repo_store.set_all_collapsed(collapsed).await
 }
 
 pub async fn mark_workspace_used(repository: String, workspace: String) -> Result<(), SplayError> {

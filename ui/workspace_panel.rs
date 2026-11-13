@@ -1,6 +1,6 @@
 use gtk::{
     Align, Box as GtkBox, Button, Image, Label, LinkButton, Orientation, Spinner, Stack, Window,
-    glib, prelude::*,
+    glib, pango::EllipsizeMode, prelude::*,
 };
 use splay::{
     forges::github::{self, PullRequestStatus},
@@ -33,7 +33,10 @@ use crate::{
 #[derive(Clone)]
 pub struct DetailWidgets {
     pub container: GtkBox,
-    session_toolbar: GtkBox,
+    /// What is shown, for the title bar: the workspace or settings page.
+    pub context_label: Label,
+    /// Terminal tabs, new terminal button and PR link, shown in the title bar.
+    pub session_toolbar: GtkBox,
     session_tabs: GtkBox,
     session_toolbar_spacer: GtkBox,
     pub session_stack: Stack,
@@ -58,6 +61,11 @@ impl DetailWidgets {
         session_toolbar.set_halign(Align::Fill);
         session_toolbar.set_hexpand(true);
         session_toolbar.add_css_class("session-toolbar");
+
+        let context_label = Label::new(None);
+        context_label.set_ellipsize(EllipsizeMode::Middle);
+        context_label.set_max_width_chars(40);
+        context_label.add_css_class("titlebar-context");
 
         let session_stack = Stack::new();
         session_stack.set_hexpand(true);
@@ -87,7 +95,6 @@ impl DetailWidgets {
         }
 
         session_toolbar.append(&session_tabs);
-        container.append(&session_toolbar);
         container.append(&session_stack);
 
         let tracked_sessions: TrackedSessions = Arc::new(Mutex::new(Vec::new()));
@@ -95,6 +102,7 @@ impl DetailWidgets {
 
         Self {
             container,
+            context_label,
             session_toolbar,
             session_tabs,
             session_toolbar_spacer,
@@ -105,7 +113,7 @@ impl DetailWidgets {
     }
 
     pub fn render_empty(&self) {
-        self.set_window_title(APP_TITLE);
+        self.set_title("", APP_TITLE);
         clear_box(&self.session_toolbar);
         clear_stack(&self.session_stack);
         self.track_session_programs(&[]);
@@ -128,7 +136,10 @@ impl DetailWidgets {
                 || workspace.repo_canonical.clone(),
                 |group| group.repo_label,
             );
-        self.set_window_title(&workspace_title(&repo_label, workspace));
+        self.set_title(
+            &workspace_name(workspace),
+            &workspace_context(&repo_label, workspace),
+        );
 
         if let Some(provisioning) = &workspace.provisioning {
             self.render_provisioning(workspace, provisioning);
@@ -232,7 +243,7 @@ impl DetailWidgets {
     }
 
     pub fn render_repository_settings(&self, state: &Rc<AppState>, group: &WorkspaceGroup) {
-        self.set_window_title(&format!("{} settings — {APP_TITLE}", group.repo_label));
+        self.set_title("Settings", &format!("{} settings", group.repo_label));
 
         // Keep an open settings page as is, so refreshes do not discard edits.
         let page_name = format!("settings:{}", group.repo_canonical);
@@ -249,9 +260,12 @@ impl DetailWidgets {
             .add_titled(&page, Some(&page_name), "settings");
     }
 
-    fn set_window_title(&self, title: &str) {
+    /// Names what is shown: `label` next to the repository switcher, and
+    /// `context`, which includes the repository, in the window title.
+    fn set_title(&self, label: &str, context: &str) {
+        self.context_label.set_label(label);
         if let Some(window) = self.container.root().and_downcast::<Window>() {
-            window.set_title(Some(title));
+            window.set_title(Some(&window_title(context)));
         }
     }
 
@@ -843,20 +857,29 @@ fn close_specific_session(
 
 /// Window title for a workspace: `repo / workspace (branch) — Splay`, leaving
 /// out the branch when it matches the workspace name.
-fn workspace_title(repo_label: &str, workspace: &WorkspaceEntry) -> String {
+fn workspace_name(workspace: &WorkspaceEntry) -> String {
     if workspace.branch.is_empty() || workspace.branch == workspace.name {
-        format!("{repo_label} / {} — {APP_TITLE}", workspace.name)
+        workspace.name.clone()
     } else {
-        format!(
-            "{repo_label} / {} ({}) — {APP_TITLE}",
-            workspace.name, workspace.branch
-        )
+        format!("{} ({})", workspace.name, workspace.branch)
+    }
+}
+
+fn workspace_context(repo_label: &str, workspace: &WorkspaceEntry) -> String {
+    format!("{repo_label} / {}", workspace_name(workspace))
+}
+
+fn window_title(context: &str) -> String {
+    if context == APP_TITLE {
+        APP_TITLE.to_string()
+    } else {
+        format!("{context} — {APP_TITLE}")
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::workspace_title;
+    use super::{window_title, workspace_context};
     use crate::data::WorkspaceEntry;
     use splay::sandbox::SandboxKind;
 
@@ -876,7 +899,10 @@ mod tests {
     #[test]
     fn workspace_title_includes_differing_branch() {
         assert_eq!(
-            workspace_title("ghostty", &workspace("fix-render", "main")),
+            window_title(&workspace_context(
+                "ghostty",
+                &workspace("fix-render", "main")
+            )),
             "ghostty / fix-render (main) — Splay"
         );
     }
@@ -884,7 +910,10 @@ mod tests {
     #[test]
     fn workspace_title_omits_branch_matching_name() {
         assert_eq!(
-            workspace_title("ghostty", &workspace("fix-render", "fix-render")),
+            window_title(&workspace_context(
+                "ghostty",
+                &workspace("fix-render", "fix-render")
+            )),
             "ghostty / fix-render — Splay"
         );
     }
