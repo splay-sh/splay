@@ -10,6 +10,7 @@ mod data;
 mod exec;
 mod ghostty;
 mod repo_settings;
+mod titlebar;
 mod workspace_panel;
 
 fn main() {
