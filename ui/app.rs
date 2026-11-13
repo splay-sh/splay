@@ -24,10 +24,10 @@ use tokio::sync::mpsc;
 
 use crate::{
     data::{
-        Provisioning, WorkspaceEntry, WorkspaceGroup, add_repository, archive_repository,
-        clone_workspace, create_workspace, current_workspace_branch, load_template_statuses,
-        load_workspace_groups, mark_workspace_used, read_workspace_head, remove_workspace,
-        rename_workspace, sync_repository, workspace_head_path,
+        Provisioning, WorkspaceEntry, WorkspaceGroup, archive_repository, clone_workspace,
+        create_workspace, current_workspace_branch, load_template_statuses, load_workspace_groups,
+        mark_workspace_used, read_workspace_head, remove_workspace, rename_workspace,
+        sync_repository, workspace_head_path,
     },
     exec,
     titlebar::{self, TitlebarWidgets},
@@ -127,6 +127,58 @@ window {
   font-weight: 700;
 }
 
+.repo-switcher-separator {
+  margin: 4px 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.repo-dialog {
+  background: #0f1115;
+}
+
+.repo-dialog headerbar {
+  background: #0a0d12;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  color: #cfd8e4;
+}
+
+.repo-dialog-body {
+  padding: 14px 20px 20px 20px;
+}
+
+.repo-dialog-label {
+  margin-top: 8px;
+  color: #cfd8e4;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.repo-dialog-hint {
+  color: #6f7887;
+  font-size: 11px;
+}
+
+.repo-dialog-entry {
+  min-height: 32px;
+  padding: 0 9px;
+  background: rgba(255, 255, 255, 0.025);
+  color: #eef4fb;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+}
+
+.repo-dialog-entry text {
+  color: #eef4fb;
+}
+
+.repo-dialog-error {
+  margin-top: 10px;
+  color: #ff9b9b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .titlebar-context {
   margin: 0 8px 0 2px;
   color: #cfd8e4;
@@ -160,80 +212,16 @@ window {
   padding: 14px 10px;
 }
 
-.sidebar-toolbar {
-  margin-bottom: 10px;
-}
 
-.sidebar-primary-action {
-  min-height: 28px;
-  padding: 0 10px;
-  background: transparent;
-  color: #cfd8e4;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9px;
-  font-size: 12px;
-  font-weight: 700;
-}
 
-.sidebar-primary-action:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: #f3f7fb;
-}
 
-.repo-compose {
-  margin-bottom: 12px;
-  padding: 2px 0 4px 0;
-}
 
-.repo-compose-entry {
-  min-height: 32px;
-  padding: 0 9px;
-  background: rgba(255, 255, 255, 0.025);
-  color: #eef4fb;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9px;
-}
 
-.repo-compose-entry text {
-  color: #eef4fb;
-}
 
-.repo-compose-error {
-  color: #ff9b9b;
-  font-size: 11px;
-  font-weight: 600;
-}
 
-.repo-compose-submit {
-  min-height: 26px;
-  padding: 0 10px;
-  background: transparent;
-  color: #eef7ff;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 9px;
-  font-size: 11px;
-  font-weight: 700;
-}
 
-.repo-compose-submit:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
 
-.repo-compose-cancel {
-  min-height: 26px;
-  padding: 0 10px;
-  background: transparent;
-  color: #7f8b9d;
-  border: none;
-  border-radius: 9px;
-  font-size: 11px;
-  font-weight: 700;
-}
 
-.repo-compose-cancel:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #f3f5f7;
-}
 
 .content {
   padding: 6px 10px;
@@ -865,10 +853,6 @@ window {
   font-size: 10px;
 }
 
-.terminal-empty {
-  color: #74839a;
-  font-size: 13px;
-}
 
 .terminal-placeholder {
   padding: 24px;
@@ -970,7 +954,6 @@ fn build_ui(app: &Application) {
         editing_workspace: RefCell::new(None),
         selected_session: RefCell::new(None),
         selected_sessions: RefCell::new(HashMap::new()),
-        repository_form: RefCell::new(RepositoryFormState::default()),
         branch_monitors: RefCell::new(Vec::new()),
         pr_indicators: RefCell::new(HashMap::new()),
         syncing_repositories: RefCell::new(HashSet::new()),
@@ -990,7 +973,7 @@ fn build_ui(app: &Application) {
         polling_templates: Cell::new(false),
     });
 
-    let sidebar_widgets = build_sidebar_widgets(&state);
+    let sidebar_widgets = build_sidebar_widgets();
     sidebar_host.append(&sidebar_widgets.container);
     *state.sidebar_widgets.borrow_mut() = Some(sidebar_widgets);
 
@@ -1000,7 +983,7 @@ fn build_ui(app: &Application) {
     *state.titlebar_widgets.borrow_mut() = Some(titlebar_widgets);
     // Nothing is selected at startup, so the placeholder does not need to
     // wait for the repositories to load.
-    detail_widgets.render_empty();
+    detail_widgets.render_empty(&state, false);
     let content = build_content(detail_widgets.container.clone());
     *state.detail_widgets.borrow_mut() = Some(detail_widgets);
     content_host.append(&content);
@@ -1044,7 +1027,6 @@ pub struct AppState {
     pub(crate) editing_workspace: RefCell<Option<String>>,
     pub selected_session: RefCell<Option<String>>,
     selected_sessions: RefCell<HashMap<String, String>>,
-    repository_form: RefCell<RepositoryFormState>,
     branch_monitors: RefCell<Vec<FileMonitor>>,
     pr_indicators: RefCell<HashMap<String, GtkBox>>,
     syncing_repositories: RefCell<HashSet<String>>,
@@ -1075,18 +1057,7 @@ pub struct AppState {
 #[derive(Clone)]
 struct SidebarWidgets {
     container: GtkBox,
-    add_repository_button: Button,
-    repository_form: RepositoryFormWidgets,
     scroller: ScrolledWindow,
-}
-
-#[derive(Clone)]
-struct RepositoryFormWidgets {
-    container: GtkBox,
-    repository_entry: Entry,
-    alias_entry: Entry,
-    error_label: Label,
-    cancel_button: Button,
 }
 
 pub fn remember_selected_session(
@@ -1114,22 +1085,6 @@ pub fn preferred_session_for_workspace(
     preferred_session
         .map(str::to_string)
         .or_else(|| state.selected_sessions.borrow().get(workspace_ref).cloned())
-}
-
-#[derive(Clone, Default)]
-struct RepositoryFormState {
-    expanded: bool,
-    repository: String,
-    alias: String,
-    focused_field: RepositoryFormField,
-    error: Option<String>,
-}
-
-#[derive(Clone, Copy, Default, Eq, PartialEq)]
-enum RepositoryFormField {
-    #[default]
-    Repository,
-    Alias,
 }
 
 #[derive(Clone)]
@@ -1215,7 +1170,7 @@ fn render_ui(
         *state.selected_workspace.borrow_mut() = Some(workspace_ref);
         detail_widgets.render_workspace(workspace, state, preferred_session.as_deref());
     } else {
-        detail_widgets.render_empty();
+        detail_widgets.render_empty(state, state.loaded.get() && groups.is_empty());
         *state.selected_workspace.borrow_mut() = None;
         *state.editing_workspace.borrow_mut() = None;
         *state.selected_session.borrow_mut() = None;
@@ -1224,7 +1179,7 @@ fn render_ui(
     render_sidebar_content(groups, state, detail_widgets.clone(), selected_workspace);
 }
 
-fn schedule_refresh(
+pub(crate) fn schedule_refresh(
     state: &Rc<AppState>,
     preferred_workspace: Option<String>,
     preferred_session: Option<String>,
@@ -1307,10 +1262,6 @@ fn schedule_render_sidebar_only(state: &Rc<AppState>) {
 }
 
 fn schedule_background_sidebar_refresh(state: &Rc<AppState>) {
-    if state.repository_form.borrow().expanded {
-        return;
-    }
-
     schedule_render_sidebar_only(state);
 }
 
@@ -1666,41 +1617,13 @@ fn cycle_selected_session(state: &Rc<AppState>, direction: isize) {
     }
 }
 
-fn build_sidebar_widgets(state: &Rc<AppState>) -> SidebarWidgets {
+fn build_sidebar_widgets() -> SidebarWidgets {
     let container = GtkBox::new(Orientation::Vertical, 0);
     container.set_size_request(250, -1);
     container.set_hexpand(false);
     container.set_vexpand(true);
     container.add_css_class("sidebar");
 
-    let toolbar = GtkBox::new(Orientation::Horizontal, 8);
-    toolbar.set_halign(Align::Fill);
-    toolbar.set_hexpand(true);
-    toolbar.add_css_class("sidebar-toolbar");
-
-    let add_repository_button = Button::with_label("Add repository");
-    add_repository_button.set_valign(Align::Center);
-    add_repository_button.add_css_class("sidebar-primary-action");
-    {
-        let state = state.clone();
-        add_repository_button.connect_clicked(move |_| {
-            {
-                let mut form = state.repository_form.borrow_mut();
-                form.expanded = true;
-                form.focused_field = RepositoryFormField::Repository;
-                form.error = None;
-            }
-            sync_repository_form_widgets(&state, false);
-            focus_repository_form_field(&state);
-        });
-    }
-    toolbar.append(&add_repository_button);
-
-    let toolbar_spacer = GtkBox::new(Orientation::Horizontal, 0);
-    toolbar_spacer.set_hexpand(true);
-    toolbar.append(&toolbar_spacer);
-
-    let repository_form = build_repository_form_widgets(state);
     let list_host = GtkBox::new(Orientation::Vertical, 0);
     list_host.set_hexpand(true);
     list_host.set_vexpand(true);
@@ -1714,14 +1637,10 @@ fn build_sidebar_widgets(state: &Rc<AppState>) -> SidebarWidgets {
     scroller.set_vexpand(true);
     list_host.append(&scroller);
 
-    container.append(&toolbar);
-    container.append(&repository_form.container);
     container.append(&list_host);
 
     SidebarWidgets {
         container,
-        add_repository_button,
-        repository_form,
         scroller,
     }
 }
@@ -1734,9 +1653,6 @@ fn render_sidebar_content(
 ) {
     clear_branch_monitors(state);
     state.pr_indicators.borrow_mut().clear();
-
-    let groups_empty = groups.is_empty() && state.loaded.get();
-    sync_repository_form_widgets(state, groups_empty);
 
     // The sidebar lists the workspaces of the repository picked in the title
     // bar.
@@ -1837,15 +1753,6 @@ fn render_sidebar_content(
         }
     }
 
-    if groups_empty {
-        let empty = Label::new(Some("Add a repository to start creating workspaces."));
-        empty.set_wrap(true);
-        empty.set_wrap_mode(gtk::pango::WrapMode::WordChar);
-        empty.set_xalign(0.0);
-        empty.add_css_class("terminal-empty");
-        sidebar_append_static_row(&list, &empty);
-    }
-
     {
         let rows_for_signal = rows.clone();
         let state = state.clone();
@@ -1932,184 +1839,6 @@ fn clear_branch_monitors(state: &Rc<AppState>) {
         monitor.cancel();
     }
     monitors.clear();
-}
-
-fn build_repository_form_widgets(state: &Rc<AppState>) -> RepositoryFormWidgets {
-    let card = GtkBox::new(Orientation::Vertical, 6);
-    card.add_css_class("repo-compose");
-    // Shown once the repositories are loaded and there are none.
-    card.set_visible(false);
-
-    let repository_entry = Entry::new();
-    repository_entry.set_placeholder_text(Some("github.com/owner/name"));
-    repository_entry.add_css_class("repo-compose-entry");
-    card.append(&repository_entry);
-
-    let alias_entry = Entry::new();
-    alias_entry.set_placeholder_text(Some("Optional alias"));
-    alias_entry.add_css_class("repo-compose-entry");
-    card.append(&alias_entry);
-
-    let error_label = Label::new(None);
-    error_label.set_xalign(0.0);
-    error_label.set_wrap(true);
-    error_label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
-    error_label.add_css_class("repo-compose-error");
-    error_label.set_visible(false);
-    card.append(&error_label);
-
-    let actions = GtkBox::new(Orientation::Horizontal, 6);
-
-    let submit = Button::with_label("Add");
-    submit.add_css_class("repo-compose-submit");
-    actions.append(&submit);
-
-    let cancel = Button::with_label("Cancel");
-    cancel.add_css_class("repo-compose-cancel");
-    {
-        let state = state.clone();
-        cancel.connect_clicked(move |_| {
-            {
-                let mut form = state.repository_form.borrow_mut();
-                form.expanded = false;
-                form.focused_field = RepositoryFormField::Repository;
-                form.error = None;
-            }
-            sync_repository_form_widgets(&state, false);
-        });
-    }
-    actions.append(&cancel);
-
-    card.append(&actions);
-
-    {
-        let state = state.clone();
-        repository_entry.connect_changed(move |entry| {
-            let mut form = state.repository_form.borrow_mut();
-            form.repository = entry.text().to_string();
-            form.error = None;
-        });
-    }
-
-    {
-        let state = state.clone();
-        alias_entry.connect_changed(move |entry| {
-            let mut form = state.repository_form.borrow_mut();
-            form.alias = entry.text().to_string();
-            form.error = None;
-        });
-    }
-
-    {
-        let state = state.clone();
-        repository_entry.connect_has_focus_notify(move |entry| {
-            if entry.has_focus() {
-                state.repository_form.borrow_mut().focused_field = RepositoryFormField::Repository;
-            }
-        });
-    }
-
-    {
-        let state = state.clone();
-        alias_entry.connect_has_focus_notify(move |entry| {
-            if entry.has_focus() {
-                state.repository_form.borrow_mut().focused_field = RepositoryFormField::Alias;
-            }
-        });
-    }
-
-    {
-        let state = state.clone();
-        let repository_entry = repository_entry.clone();
-        let alias_entry = alias_entry.clone();
-        submit.connect_clicked(move |_| {
-            submit_repository_form(&state, &repository_entry, &alias_entry);
-        });
-    }
-
-    {
-        let state = state.clone();
-        let submit_repository_entry = repository_entry.clone();
-        let submit_alias_entry = alias_entry.clone();
-        repository_entry.clone().connect_activate(move |_| {
-            submit_repository_form(&state, &submit_repository_entry, &submit_alias_entry);
-        });
-    }
-
-    {
-        let state = state.clone();
-        let submit_repository_entry = repository_entry.clone();
-        let submit_alias_entry = alias_entry.clone();
-        alias_entry.clone().connect_activate(move |_| {
-            submit_repository_form(&state, &submit_repository_entry, &submit_alias_entry);
-        });
-    }
-
-    RepositoryFormWidgets {
-        container: card,
-        repository_entry,
-        alias_entry,
-        error_label,
-        cancel_button: cancel,
-    }
-}
-
-fn sync_repository_form_widgets(state: &Rc<AppState>, groups_empty: bool) {
-    let form_state = state.repository_form.borrow().clone();
-    let sidebar_widgets = state
-        .sidebar_widgets
-        .borrow()
-        .as_ref()
-        .cloned()
-        .expect("sidebar widgets initialized");
-    let widgets = &sidebar_widgets.repository_form;
-
-    sidebar_widgets
-        .add_repository_button
-        .set_visible(!groups_empty);
-    widgets
-        .container
-        .set_visible(form_state.expanded || groups_empty);
-    widgets.cancel_button.set_visible(!groups_empty);
-
-    if widgets.repository_entry.text().as_str() != form_state.repository.as_str() {
-        widgets.repository_entry.set_text(&form_state.repository);
-    }
-
-    if widgets.alias_entry.text().as_str() != form_state.alias.as_str() {
-        widgets.alias_entry.set_text(&form_state.alias);
-    }
-
-    match form_state.error {
-        Some(error) => {
-            widgets.error_label.set_label(&error);
-            widgets.error_label.set_visible(true);
-        }
-        None => {
-            widgets.error_label.set_label("");
-            widgets.error_label.set_visible(false);
-        }
-    }
-}
-
-fn focus_repository_form_field(state: &Rc<AppState>) {
-    let focused_field = state.repository_form.borrow().focused_field;
-    let sidebar_widgets = state
-        .sidebar_widgets
-        .borrow()
-        .as_ref()
-        .cloned()
-        .expect("sidebar widgets initialized");
-    let widgets = sidebar_widgets.repository_form.clone();
-
-    glib::idle_add_local_once(move || match focused_field {
-        RepositoryFormField::Repository => {
-            widgets.repository_entry.grab_focus();
-        }
-        RepositoryFormField::Alias => {
-            widgets.alias_entry.grab_focus();
-        }
-    });
 }
 
 fn build_repo_row(state: &Rc<AppState>, group: &WorkspaceGroup, is_syncing: bool) -> GtkBox {
@@ -3161,43 +2890,6 @@ fn remove_selected_workspace(state: &Rc<AppState>, workspace: &WorkspaceEntry, b
                     eprintln!("failed to remove workspace: {err}");
                     schedule_refresh(&state, Some(removed_workspace_ref.clone()), None);
                 }
-            }
-        },
-    );
-}
-
-fn submit_repository_form(state: &Rc<AppState>, repository_entry: &Entry, alias_entry: &Entry) {
-    let repository = repository_entry.text().trim().to_string();
-    let alias_text = alias_entry.text().trim().to_string();
-    let focused_field = if alias_entry.has_focus() {
-        RepositoryFormField::Alias
-    } else {
-        RepositoryFormField::Repository
-    };
-
-    {
-        let mut form = state.repository_form.borrow_mut();
-        form.repository = repository.clone();
-        form.alias = alias_text.clone();
-        form.focused_field = focused_field;
-        form.error = None;
-    }
-
-    let alias = (!alias_text.is_empty()).then_some(alias_text.clone());
-    let preferred_workspace = state.selected_workspace.borrow().clone();
-
-    let state = state.clone();
-    exec::dispatch(
-        add_repository(repository, alias),
-        move |result| match result {
-            Ok(_) => {
-                *state.repository_form.borrow_mut() = RepositoryFormState::default();
-                schedule_refresh(&state, preferred_workspace, None);
-            }
-            Err(err) => {
-                state.repository_form.borrow_mut().error = Some(err.to_string());
-                sync_repository_form_widgets(&state, false);
-                focus_repository_form_field(&state);
             }
         },
     );

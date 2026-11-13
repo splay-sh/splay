@@ -27,6 +27,7 @@ use crate::{
         foreground_program,
     },
     exec, ghostty,
+    repo_dialog::open_add_repository_dialog,
     repo_settings::build_repository_settings,
 };
 
@@ -112,13 +113,19 @@ impl DetailWidgets {
         }
     }
 
-    pub fn render_empty(&self) {
+    /// Shows that no workspace is selected, or, with `no_repositories`, how
+    /// to add the first repository.
+    pub fn render_empty(&self, state: &Rc<AppState>, no_repositories: bool) {
         self.set_title("", APP_TITLE);
         clear_box(&self.session_toolbar);
         clear_stack(&self.session_stack);
         self.track_session_programs(&[]);
 
-        let placeholder = build_no_workspace_placeholder();
+        let placeholder = if no_repositories {
+            build_no_repository_placeholder(state)
+        } else {
+            build_no_workspace_placeholder()
+        };
         self.session_stack
             .add_titled(&placeholder, Some("empty"), "empty");
     }
@@ -479,6 +486,31 @@ fn build_empty_session_placeholder(state: &Rc<AppState>, workspace: &WorkspaceEn
     }
 
     container.append(&new_terminal);
+    container
+}
+
+fn build_no_repository_placeholder(state: &Rc<AppState>) -> GtkBox {
+    let container = build_placeholder(
+        "No repositories",
+        "Add a repository to start creating workspaces.",
+    );
+
+    let add = Button::new();
+    add.set_halign(Align::Center);
+    add.add_css_class("terminal-placeholder-action");
+
+    let content = GtkBox::new(Orientation::Horizontal, 8);
+    content.set_halign(Align::Center);
+    let icon = Image::from_icon_name("list-add-symbolic");
+    icon.set_pixel_size(14);
+    content.append(&icon);
+    content.append(&Label::new(Some("Add Repository")));
+    add.set_child(Some(&content));
+
+    let state = state.clone();
+    add.connect_clicked(move |_| open_add_repository_dialog(&state));
+
+    container.append(&add);
     container
 }
 
