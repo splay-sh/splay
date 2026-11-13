@@ -1842,7 +1842,6 @@ fn clear_branch_monitors(state: &Rc<AppState>) {
 }
 
 fn build_repo_row(state: &Rc<AppState>, group: &WorkspaceGroup, is_syncing: bool) -> GtkBox {
-    let repo_label = group.repo_label.as_str();
     let repo_canonical = group.repo_canonical.as_str();
     let repo_status = group.repo_status.as_deref();
     let row = GtkBox::new(Orientation::Horizontal, 0);
@@ -1856,7 +1855,9 @@ fn build_repo_row(state: &Rc<AppState>, group: &WorkspaceGroup, is_syncing: bool
     copy.set_hexpand(true);
     copy.set_valign(Align::Center);
 
-    let label = Label::new(Some(&repo_label.to_uppercase()));
+    // The repository is named in the title bar's switcher, so the sidebar
+    // heading names what it lists.
+    let label = Label::new(Some("WORKSPACES"));
     label.set_xalign(0.0);
     label.set_valign(Align::Center);
     label.add_css_class("repo-header");
